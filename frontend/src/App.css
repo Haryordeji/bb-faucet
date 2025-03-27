@@ -1,0 +1,96 @@
+.app-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  .app-header {
+    text-align: center;
+    margin-bottom: 30px;
+  }
+  
+  .app-header h1 {
+    color: #2c3e50;
+  }
+  
+  .connect-button, .submit-button, .claim-button {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    margin: 10px 0;
+    transition: background-color 0.3s;
+  }
+  
+  .connect-button:hover, .submit-button:hover, .claim-button:hover {
+    background-color: #2980b9;
+  }
+  
+  .connect-button:disabled, .submit-button:disabled, .claim-button:disabled {
+    background-color: #95a5a6;
+    cursor: not-allowed;
+  }
+  
+  .wallet-info {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+  }
+  
+  .error-message {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+  }
+  
+  .quiz-container {
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  .quiz-question {
+    margin-bottom: 20px;
+  }
+  
+  .options-container {
+    margin: 20px 0;
+  }
+  
+  .option {
+    padding: 10px;
+    margin: 5px 0;
+    background-color: #ecf0f1;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  
+  .option:hover {
+    background-color: #d6eaf8;
+  }
+  
+  .option.selected {
+    background-color: #3498db;
+    color: white;
+  }
+  
+  .quiz-result {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+  }
+  
+  .loading-quiz, .wallet-required {
+    text-align: center;
+    padding: 20px;
+  }

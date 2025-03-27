@@ -18,9 +18,16 @@
   },
   "homepage": "https://github.com/Haryordeji/bb-faucet#readme",
   "dependencies": {
-    "axios": "^1.8.4"
+    "axios": "^1.8.4",
+    "ethers": "^6.13.5",
+    "express": "^4.21.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.13.14"
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.14",
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.4"
   }
 }
