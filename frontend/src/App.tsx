@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import './App.css';
 import { QuizQuestion, QuizResult, ClaimResponse, ClaimStatus } from './types';
+import { fetchQuizQuestions, submitQuizAnswers, getClaimStatus, initiateClaim } from './utils/api';
 
 const App: React.FC = () => {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -46,7 +47,7 @@ const App: React.FC = () => {
       
       // Get claim status for this address
       if (accounts[0]) {
-        await fetchClaimStatus(accounts[0]);
+        await fetchClaimStatusForUser(accounts[0]);
       }
     } catch (err) {
       setError('Failed to connect wallet. Please try again.');
@@ -57,15 +58,9 @@ const App: React.FC = () => {
   };
 
   // Fetch claim status for the current wallet
-  const fetchClaimStatus = async (address: string) => {
+  const fetchClaimStatusForUser = async (address: string) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/claim/status/${address}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch claim status');
-      }
-      
-      const data = await response.json();
+      const data = await getClaimStatus(address);
       setClaimStatus(data);
     } catch (err) {
       console.error('Error fetching claim status:', err);
@@ -77,13 +72,8 @@ const App: React.FC = () => {
   const loadQuizQuestion = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('http://localhost:3000/api/quiz/generate?numQuestions=1');
-
-      if (!response.ok) {
-        throw new Error('Failed to load question');
-      }
-
-      const data = await response.json();
+      const data = await fetchQuizQuestions(1);
+      
       setQuestions(data.questions);
       setCurrentQuestionIndex(0);
       setSelectedOption(null);
@@ -107,23 +97,12 @@ const App: React.FC = () => {
       const currentQuestion = questions[currentQuestionIndex];
       const selectedAnswerText = currentQuestion.options[selectedOption];
       
-      const response = await fetch('http://localhost:3000/api/quiz/submit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          questionIds: [currentQuestion.question],
-          answers: [selectedAnswerText],
-          correctAnswers: [currentQuestion.correctAnswer],
-        }),
-      });
+      const result = await submitQuizAnswers(
+        [currentQuestion.question],
+        [selectedAnswerText],
+        [currentQuestion.correctAnswer]
+      );
 
-      if (!response.ok) {
-        throw new Error('Failed to submit answer');
-      }
-
-      const result = await response.json();
       setQuizResult({
         score: result.score,
         isCorrect: result.isCorrect,
@@ -131,7 +110,7 @@ const App: React.FC = () => {
       
       // Refresh claim status after submitting
       if (walletAddress) {
-        await fetchClaimStatus(walletAddress);
+        await fetchClaimStatusForUser(walletAddress);
       }
     } catch (err) {
       setError('Failed to submit answer. Please try again.');
@@ -148,30 +127,14 @@ const App: React.FC = () => {
     try {
       setClaimProcessing(true);
       
-      const response = await fetch('http://localhost:3000/api/claim/initiate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userAddress: walletAddress,
-          scorePercentage: quizResult.score,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to claim reward');
-      }
-
-      const result: ClaimResponse = await response.json();
+      const result = await initiateClaim(walletAddress, quizResult.score);
       
       if (result.success && result.transactionHash) {
         setTransactionHash(result.transactionHash);
         
         // Refresh claim status after claiming
         if (walletAddress) {
-          await fetchClaimStatus(walletAddress);
+          await fetchClaimStatusForUser(walletAddress);
         }
       } else {
         throw new Error(result.error || 'Unknown error occurred');
@@ -195,7 +158,7 @@ const App: React.FC = () => {
         setClaimStatus(null);
       } else {
         setWalletAddress(accounts[0]);
-        fetchClaimStatus(accounts[0]);
+        fetchClaimStatusForUser(accounts[0]);
       }
     };
 

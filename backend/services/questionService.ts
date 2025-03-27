@@ -24,7 +24,7 @@ export class QuestionService {
 
   constructor(
     openaiApiKey: string,
-    slidesDirectory: string = path.join(__dirname, '../../course-materials'),
+    slidesDirectory: string = path.join(__dirname, '../../backend/course-materials'),
     currentWeek: number = 6
   ) {
     this.openaiApiKey = openaiApiKey;
@@ -50,6 +50,7 @@ export class QuestionService {
    */
   private loadSlides(): void {
     try {
+      console.log('Loading slides from:', this.slidesDirectory);
       const files = fs.readdirSync(this.slidesDirectory);
       
       this.slidesCache = files
