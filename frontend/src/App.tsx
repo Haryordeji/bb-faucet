@@ -1,18 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import './App.css';
-
-interface QuizQuestion {
-  question: string;
-  options: string[];
-  correctAnswer: string;
-  explanation: string;
-}
-
-interface QuizResult {
-  score: number;
-  isCorrect: boolean;
-}
+import { QuizQuestion, QuizResult, ClaimResponse, ClaimStatus } from './types';
 
 const App: React.FC = () => {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -23,10 +12,13 @@ const App: React.FC = () => {
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [claimStatus, setClaimStatus] = useState<ClaimStatus | null>(null);
+  const [claimProcessing, setClaimProcessing] = useState(false);
+  const [transactionHash, setTransactionHash] = useState<string | null>(null);
 
   // Check if MetaMask is installed
   const isMetaMaskInstalled = () => {
-    return typeof window.ethereum !== 'undefined';
+    return typeof window !== 'undefined' && typeof window.ethereum !== 'undefined';
   };
 
   // Connect to MetaMask
@@ -40,7 +32,6 @@ const App: React.FC = () => {
       setIsLoading(true);
       if (typeof window.ethereum === 'undefined') {
         throw new Error('MetaMask is not installed');
-        // TODO: display visual error message
       }
       
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
@@ -52,6 +43,11 @@ const App: React.FC = () => {
       
       // Load a quiz question after connecting
       await loadQuizQuestion();
+      
+      // Get claim status for this address
+      if (accounts[0]) {
+        await fetchClaimStatus(accounts[0]);
+      }
     } catch (err) {
       setError('Failed to connect wallet. Please try again.');
       console.error(err);
@@ -60,21 +56,28 @@ const App: React.FC = () => {
     }
   };
 
+  // Fetch claim status for the current wallet
+  const fetchClaimStatus = async (address: string) => {
+    try {
+      const response = await fetch(`http://localhost:3000/api/claim/status/${address}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch claim status');
+      }
+      
+      const data = await response.json();
+      setClaimStatus(data);
+    } catch (err) {
+      console.error('Error fetching claim status:', err);
+      // Don't set error state here to avoid disrupting the main flow
+    }
+  };
+
   // Load a quiz question from the backend
   const loadQuizQuestion = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('http://localhost:3000/api/quiz/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          slideContent: 'Blockchain is a decentralized ledger technology that allows data to be stored globally on thousands of servers.',
-          numQuestions: 1,
-          difficulty: 'beginner'
-        }),
-      });
+      const response = await fetch('http://localhost:3000/api/quiz/generate?numQuestions=1');
 
       if (!response.ok) {
         throw new Error('Failed to load question');
@@ -99,14 +102,20 @@ const App: React.FC = () => {
 
     try {
       setIsLoading(true);
+      
+      // Get the current question
+      const currentQuestion = questions[currentQuestionIndex];
+      const selectedAnswerText = currentQuestion.options[selectedOption];
+      
       const response = await fetch('http://localhost:3000/api/quiz/submit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          questionId: questions[currentQuestionIndex].question, // Using question as ID for simplicity
-          selectedOption,
+          questionIds: [currentQuestion.question],
+          answers: [selectedAnswerText],
+          correctAnswers: [currentQuestion.correctAnswer],
         }),
       });
 
@@ -115,7 +124,15 @@ const App: React.FC = () => {
       }
 
       const result = await response.json();
-      setQuizResult(result);
+      setQuizResult({
+        score: result.score,
+        isCorrect: result.isCorrect,
+      });
+      
+      // Refresh claim status after submitting
+      if (walletAddress) {
+        await fetchClaimStatus(walletAddress);
+      }
     } catch (err) {
       setError('Failed to submit answer. Please try again.');
       console.error(err);
@@ -126,10 +143,11 @@ const App: React.FC = () => {
 
   // Claim the reward
   const claimReward = async () => {
-    if (!provider || !walletAddress || !quizResult) return;
-
+    if (!walletAddress || !quizResult) return;
+    
     try {
-      setIsLoading(true);
+      setClaimProcessing(true);
+      
       const response = await fetch('http://localhost:3000/api/claim/initiate', {
         method: 'POST',
         headers: {
@@ -142,20 +160,27 @@ const App: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to claim reward');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to claim reward');
       }
 
-      const result = await response.json();
-      if (result.success) {
-        alert(`Reward claimed successfully! Transaction hash: ${result.transactionHash}`);
+      const result: ClaimResponse = await response.json();
+      
+      if (result.success && result.transactionHash) {
+        setTransactionHash(result.transactionHash);
+        
+        // Refresh claim status after claiming
+        if (walletAddress) {
+          await fetchClaimStatus(walletAddress);
+        }
       } else {
-        throw new Error(result.error);
+        throw new Error(result.error || 'Unknown error occurred');
       }
     } catch (err) {
       setError(`Failed to claim reward: ${err instanceof Error ? err.message : String(err)}`);
       console.error(err);
     } finally {
-      setIsLoading(false);
+      setClaimProcessing(false);
     }
   };
 
@@ -167,8 +192,10 @@ const App: React.FC = () => {
       if (accounts.length === 0) {
         setWalletAddress(null);
         setProvider(null);
+        setClaimStatus(null);
       } else {
         setWalletAddress(accounts[0]);
+        fetchClaimStatus(accounts[0]);
       }
     };
 
@@ -196,6 +223,9 @@ const App: React.FC = () => {
         ) : (
           <div className="wallet-info">
             <p>Connected: {`${walletAddress.substring(0, 6)}...${walletAddress.substring(38)}`}</p>
+            {claimStatus && (
+              <p>Remaining claims today: {claimStatus.remainingClaims}</p>
+            )}
           </div>
         )}
       </header>
@@ -250,14 +280,50 @@ const App: React.FC = () => {
             <p>Score: {quizResult.score}%</p>
             <p>{questions[currentQuestionIndex].explanation}</p>
             
-            {quizResult.score >= 50 && (
-              <button
-                onClick={claimReward}
-                disabled={isLoading}
-                className="claim-button"
-              >
-                {isLoading ? 'Processing...' : 'Claim Reward'}
-              </button>
+            {quizResult.score >= 50 ? (
+              <>
+                {!transactionHash ? (
+                  <button
+                    onClick={claimReward}
+                    disabled={claimProcessing || !claimStatus?.canClaim}
+                    className="claim-button"
+                  >
+                    {claimProcessing ? 'Processing...' : 
+                      claimStatus?.canClaim ? 'Claim Reward' : 'Daily Claim Limit Reached'}
+                  </button>
+                ) : (
+                  <div className="claim-success">
+                    <p>Reward claimed successfully!</p>
+                    <p>
+                      <a 
+                        href={`https://sepolia.etherscan.io/tx/${transactionHash}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                      >
+                        View Transaction
+                      </a>
+                    </p>
+                  </div>
+                )}
+                <button 
+                  onClick={loadQuizQuestion} 
+                  className="next-question-button"
+                  disabled={isLoading}
+                >
+                  Try Another Question
+                </button>
+              </>
+            ) : (
+              <div className="low-score-message">
+                <p>You need a score of at least 50% to claim a reward.</p>
+                <button 
+                  onClick={loadQuizQuestion} 
+                  className="next-question-button"
+                  disabled={isLoading}
+                >
+                  Try Again
+                </button>
+              </div>
             )}
           </div>
         )}

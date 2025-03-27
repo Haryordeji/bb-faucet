@@ -1,25 +1,17 @@
 import { ethers } from 'ethers';
 
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string }) => Promise<string[]>;
-      on: (event: string, callback: (accounts: string[]) => void) => void;
-      removeListener: (event: string, callback: (accounts: string[]) => void) => void;
-    };
-  }
-}
+// The global window.ethereum type is defined in src/types/ethereum.d.ts
 
 export const connectMetaMask = async (): Promise<{
   provider: ethers.BrowserProvider;
   address: string;
 }> => {
-  if (typeof window.ethereum === 'undefined') {
+  if (typeof window === 'undefined' || typeof window.ethereum === 'undefined') {
     throw new Error('MetaMask is not installed');
   }
 
   const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-  const provider = new ethers.BrowserProvider(window.ethereum);
+  const provider = new ethers.BrowserProvider(window.ethereum as any);
   
   return {
     provider,
@@ -28,13 +20,13 @@ export const connectMetaMask = async (): Promise<{
 };
 
 export const checkMetaMaskInstalled = (): boolean => {
-  return typeof window.ethereum !== 'undefined';
+  return typeof window !== 'undefined' && typeof window.ethereum !== 'undefined';
 };
 
 export const listenForAccountChanges = (
   callback: (newAddress: string | null) => void
 ): (() => void) => {
-  if (typeof window.ethereum === 'undefined') {
+  if (typeof window === 'undefined' || typeof window.ethereum === 'undefined') {
     return () => {};
   }
 
