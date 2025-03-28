@@ -1,7 +1,7 @@
 // backend/services/questionService.ts
 import fs from 'fs';
 import path from 'path';
-import axios from 'axios';
+import OpenAI from 'openai';
 
 interface QuizQuestion {
   question: string;
@@ -17,19 +17,27 @@ interface SlideContent {
 }
 
 export class QuestionService {
-  private openaiApiKey: string;
+  private deepseekApiKey: string;
   private slidesDirectory: string;
   private currentWeek: number;
   private slidesCache: SlideContent[] = [];
+  private openai: OpenAI;
 
   constructor(
-    openaiApiKey: string,
+    deepseekApiKey: string,
     slidesDirectory: string = path.join(__dirname, '../../backend/course-materials'),
     currentWeek: number = 6
   ) {
-    this.openaiApiKey = openaiApiKey;
+    this.deepseekApiKey = deepseekApiKey;
     this.slidesDirectory = slidesDirectory;
     this.currentWeek = currentWeek;
+    
+    // Initialize the OpenAI client with DeepSeek configuration
+    this.openai = new OpenAI({
+      baseURL: 'https://api.deepseek.com',
+      apiKey: this.deepseekApiKey
+    });
+    
     this.loadSlides();
   }
 
@@ -44,7 +52,6 @@ export class QuestionService {
     return this.currentWeek;
   }
     
-
   /**
    * Load all slides from the directory and cache them
    */
@@ -107,33 +114,24 @@ export class QuestionService {
         numQuestions,
       );
 
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: "gpt-4",
-          messages: [
-            {
-              role: "system",
-              content: "You are a helpful assistant that creates educational quiz questions about blockchain technology. Always return valid JSON format."
-            },
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 2000,
-          response_format: { type: "json_object" }
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'application/json'
+      const completion = await this.openai.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant that creates educational quiz questions about blockchain technology. Always return valid JSON format."
+          },
+          {
+            role: "user",
+            content: prompt
           }
-        }
-      );
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+        response_format: { type: "json_object" }
+      });
 
-      const content = response.data.choices[0].message.content;
+      const content:string = completion.choices[0].message.content || '';
       const questions = this.parseQuestions(content);
       
       return {
