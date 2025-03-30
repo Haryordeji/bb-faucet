@@ -2,9 +2,11 @@
 import { Request, Response } from 'express';
 import { QuestionService } from '../services/questionService';
 import path from 'path';
+import dotenv from "dotenv";
+dotenv.config();
 
 const questionService = new QuestionService(
-  process.env.DEEPSEEK_API_KEY || '',
+  process.env.DEEPSEEK_API_KEY!,
   path.join(__dirname, '../../backend/course-materials'),
   parseInt(process.env.CURRENT_WEEK || '1')
 );

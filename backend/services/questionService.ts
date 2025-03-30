@@ -37,7 +37,6 @@ export class QuestionService {
       baseURL: 'https://api.deepseek.com',
       apiKey: this.deepseekApiKey
     });
-    
     this.loadSlides();
   }
 

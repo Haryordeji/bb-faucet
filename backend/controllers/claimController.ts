@@ -3,11 +3,13 @@ import { Request, Response } from 'express';
 import { ethers } from 'ethers';
 import fs from 'fs';
 import path from 'path';
+import dotenv from "dotenv";
+dotenv.config();
 
 // Load ABI from the compiled contract
 const QUIZ_FAUCET_ABI = JSON.parse(
   fs.readFileSync(
-    path.join(__dirname, '../../artifacts/contracts/QuizFaucet.sol/QuizFaucet.json')
+    path.join(__dirname, '../../backend/artifacts/contracts/QuizFaucet.sol/QuizFaucet.json')
   ).toString()
 ).abi;
 
