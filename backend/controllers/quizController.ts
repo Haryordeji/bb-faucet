@@ -7,7 +7,7 @@ dotenv.config();
 
 const questionService = new QuestionService(
   process.env.DEEPSEEK_API_KEY!,
-  path.join(__dirname, '../../backend/course-materials'),
+  path.join(__dirname, '../course-materials'),
   parseInt(process.env.CURRENT_WEEK || '1')
 );
 
