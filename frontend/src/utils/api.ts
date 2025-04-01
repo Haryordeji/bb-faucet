@@ -2,7 +2,7 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-export const fetchQuizQuestions = async (numQuestions = 1) => {
+export const fetchQuizQuestions = async (numQuestions = 5) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/quiz/generate?numQuestions=${numQuestions}`);
     

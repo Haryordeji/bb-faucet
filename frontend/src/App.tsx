@@ -8,8 +8,7 @@ const App: React.FC = () => {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<(number | null)[]>([]);
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,8 +41,8 @@ const App: React.FC = () => {
       setProvider(provider);
       setError(null);
       
-      // Load a quiz question after connecting
-      await loadQuizQuestion();
+      // Load quiz questions after connecting
+      await loadQuizQuestions();
       
       // Get claim status for this address
       if (accounts[0]) {
@@ -68,39 +67,55 @@ const App: React.FC = () => {
     }
   };
 
-  // Load a quiz question from the backend
-  const loadQuizQuestion = async () => {
+  // Load quiz questions from the backend
+  const loadQuizQuestions = async () => {
     try {
       setIsLoading(true);
-      const data = await fetchQuizQuestions(1);
+      const data = await fetchQuizQuestions(5);
       
       setQuestions(data.questions);
-      setCurrentQuestionIndex(0);
-      setSelectedOption(null);
+      setSelectedOptions(new Array(data.questions.length).fill(null));
       setQuizResult(null);
     } catch (err) {
-      setError('Failed to load quiz question. Please try again.');
+      setError('Failed to load quiz questions. Please try again.');
       console.error(err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Submit the selected answer
-  const submitAnswer = async () => {
-    if (selectedOption === null || !questions.length) return;
+  // Handle selecting an option for a specific question
+  const handleOptionSelect = (questionIndex: number, optionIndex: number) => {
+    const newSelectedOptions = [...selectedOptions];
+    newSelectedOptions[questionIndex] = optionIndex;
+    setSelectedOptions(newSelectedOptions);
+  };
+
+  // Check if all questions have a selected answer
+  const allQuestionsAnswered = () => {
+    return selectedOptions.every(option => option !== null);
+  };
+
+  // Submit all answers
+  const submitAnswers = async () => {
+    if (!allQuestionsAnswered() || !questions.length) return;
 
     try {
       setIsLoading(true);
       
-      // Get the current question
-      const currentQuestion = questions[currentQuestionIndex];
-      const selectedAnswerText = currentQuestion.options[selectedOption];
+      // Prepare arrays for question IDs, user answers, and correct answers
+      const questionIds = questions.map(q => q.question);
+      const userAnswers = questions.map((q, index) => {
+        const selectedIndex = selectedOptions[index];
+        return selectedIndex !== null ? q.options[selectedIndex] : '';
+      });
+      const correctAnswers = questions.map(q => q.correctAnswer);
       
+      // Submit all answers together
       const result = await submitQuizAnswers(
-        [currentQuestion.question],
-        [selectedAnswerText],
-        [currentQuestion.correctAnswer]
+        questionIds,
+        userAnswers,
+        correctAnswers
       );
 
       setQuizResult({
@@ -113,7 +128,7 @@ const App: React.FC = () => {
         await fetchClaimStatusForUser(walletAddress);
       }
     } catch (err) {
-      setError('Failed to submit answer. Please try again.');
+      setError('Failed to submit answers. Please try again.');
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -206,42 +221,61 @@ const App: React.FC = () => {
             <h2>Connect Your Wallet</h2>
             <p>Please connect your MetaMask wallet to participate in quizzes and earn rewards.</p>
           </div>
-        ) : questions.length > 0 ? (
-          <div className="quiz-question">
-            <h2>Question {currentQuestionIndex + 1}</h2>
-            <p>{questions[currentQuestionIndex].question}</p>
+        ) : questions.length > 0 && !quizResult ? (
+          <div className="all-questions">
+            <h2>Blockchain Quiz</h2>
             
-            <div className="options-container">
-              {questions[currentQuestionIndex].options.map((option, index) => (
-                <div
-                  key={index}
-                  className={`option ${selectedOption === index ? 'selected' : ''}`}
-                  onClick={() => setSelectedOption(index)}
-                >
-                  {option}
+            {questions.map((question, questionIndex) => (
+              <div key={questionIndex} className="quiz-question">
+                <h3>Question {questionIndex + 1}</h3>
+                <p>{question.question}</p>
+                
+                <div className="options-container">
+                  {question.options.map((option, optionIndex) => (
+                    <div
+                      key={optionIndex}
+                      className={`option ${selectedOptions[questionIndex] === optionIndex ? 'selected' : ''}`}
+                      onClick={() => handleOptionSelect(questionIndex, optionIndex)}
+                    >
+                      {option}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
             
             <button
-              onClick={submitAnswer}
-              disabled={selectedOption === null || isLoading}
+              onClick={submitAnswers}
+              disabled={!allQuestionsAnswered() || isLoading}
               className="submit-button"
             >
-              {isLoading ? 'Submitting...' : 'Submit Answer'}
+              {isLoading ? 'Submitting...' : 'Submit All Answers'}
             </button>
           </div>
-        ) : (
+        ) : isLoading ? (
           <div className="loading-quiz">
             <p>Loading quiz questions...</p>
           </div>
-        )}
+        ) : null}
 
         {quizResult && (
           <div className="quiz-result">
-            <h3>Your Result</h3>
-            <p>Score: {quizResult.score}%</p>
-            <p>{questions[currentQuestionIndex].explanation}</p>
+            <h3>Your Results</h3>
+            <p>Overall Score: {quizResult.score}%</p>
+            
+            {/* Display individual question results */}
+            <div className="question-results">
+              {questions.map((question, index) => (
+                <div key={index} className="question-result">
+                  <h4>Question {index + 1}</h4>
+                  <p>{question.question}</p>
+                  <p>Your answer: {selectedOptions[index] !== null ? 
+                      question.options[selectedOptions[index]] : 'No answer'}</p>
+                  <p>Correct answer: {question.correctAnswer}</p>
+                  <p className="explanation">{question.explanation}</p>
+                </div>
+              ))}
+            </div>
             
             {quizResult.score >= 50 ? (
               <>
@@ -269,18 +303,18 @@ const App: React.FC = () => {
                   </div>
                 )}
                 <button 
-                  onClick={loadQuizQuestion} 
+                  onClick={loadQuizQuestions} 
                   className="next-question-button"
                   disabled={isLoading}
                 >
-                  Try Another Question
+                  Take Another Quiz
                 </button>
               </>
             ) : (
               <div className="low-score-message">
                 <p>You need a score of at least 50% to claim a reward.</p>
                 <button 
-                  onClick={loadQuizQuestion} 
+                  onClick={loadQuizQuestions} 
                   className="next-question-button"
                   disabled={isLoading}
                 >
