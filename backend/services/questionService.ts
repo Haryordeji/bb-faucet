@@ -25,7 +25,7 @@ export class QuestionService {
 
   constructor(
     deepseekApiKey: string,
-    slidesDirectory: string = path.join(__dirname, '../course-materials'),
+    slidesDirectory: string = path.join(__dirname, '../artifacts/course-materials'),
     currentWeek: number = 6
   ) {
     this.deepseekApiKey = deepseekApiKey;
