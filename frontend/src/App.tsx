@@ -4,6 +4,7 @@ import './App.css';
 import { QuizQuestion, FreeResponseQuestion, QuizResult, ClaimResponse, ClaimStatus } from './types';
 import { fetchQuizQuestions, submitQuizAnswers, getClaimStatus, initiateClaim } from './utils/api';
 import { LoadingButton, FullPageSpinner, ProgressBar, ScoreCircle } from './components/Loading';
+import { ErrorMessage, FeedbackOverlay } from './components/Feedback';
 
 const App: React.FC = () => {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -18,6 +19,7 @@ const App: React.FC = () => {
   const [claimStatus, setClaimStatus] = useState<ClaimStatus | null>(null);
   const [claimProcessing, setClaimProcessing] = useState(false);
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   // Check if MetaMask is installed
   const isMetaMaskInstalled = () => {
@@ -74,6 +76,7 @@ const App: React.FC = () => {
   const loadQuizQuestions = async () => {
     try {
       setIsLoading(true);
+      setError(null);
       const data = await fetchQuizQuestions(5);
       
       setQuestions(data.questions);
@@ -150,13 +153,13 @@ const App: React.FC = () => {
     
     try {
       setClaimProcessing(true);
+      setFeedbackVisible(true); 
       
       const result = await initiateClaim(walletAddress, quizResult.score);
       
       if (result.success && result.transactionHash) {
         setTransactionHash(result.transactionHash);
         
-        // Refresh claim status after claiming
         if (walletAddress) {
           await fetchClaimStatusForUser(walletAddress);
         }
@@ -168,6 +171,7 @@ const App: React.FC = () => {
       console.error(err);
     } finally {
       setClaimProcessing(false);
+      setFeedbackVisible(false);
     }
   };
 
@@ -226,12 +230,7 @@ const App: React.FC = () => {
         )}
       </header>
 
-      {error && (
-        <div className="error-message">
-          <p>{error}</p>
-          <button onClick={() => setError(null)}>Dismiss</button>
-        </div>
-      )}
+      <ErrorMessage error={error} onDismiss={() => setError(null)} />
 
       <main className="quiz-container">
         {!walletAddress ? (
@@ -428,6 +427,11 @@ const App: React.FC = () => {
             )}
           </div>
         )}
+
+          <FeedbackOverlay 
+            message="Processing your claim..." 
+            visible={feedbackVisible} 
+          />
       </main>
     </div>
   );
