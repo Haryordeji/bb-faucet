@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import './App.css';
 import { QuizQuestion, FreeResponseQuestion, QuizResult, ClaimResponse, ClaimStatus } from './types';
 import { fetchQuizQuestions, submitQuizAnswers, getClaimStatus, initiateClaim } from './utils/api';
+import { LoadingButton, FullPageSpinner, ProgressBar, ScoreCircle } from './components/Loading';
 
 const App: React.FC = () => {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -199,18 +200,27 @@ const App: React.FC = () => {
         <p>Learn blockchain and earn testnet ETH</p>
         
         {!walletAddress ? (
-          <button 
+          <LoadingButton 
             onClick={connectWallet} 
-            disabled={isLoading}
+            disabled={false}
+            isLoading={isLoading}
             className="connect-button"
           >
-            {isLoading ? 'Connecting...' : 'Connect MetaMask'}
-          </button>
+            Connect MetaMask
+          </LoadingButton>
         ) : (
           <div className="wallet-info">
-            <p>Connected: {`${walletAddress.substring(0, 6)}...${walletAddress.substring(38)}`}</p>
+            <div className="wallet-address">
+              <span className="wallet-icon">💳</span>
+              <p>Connected: {`${walletAddress.substring(0, 6)}...${walletAddress.substring(38)}`}</p>
+            </div>
             {claimStatus && (
-              <p>Remaining claims today: {claimStatus.remainingClaims}</p>
+              <div className="wallet-status">
+                <span className="status-indicator"></span>
+                <div className="claim-info">
+                  Remaining claims: <span className="claim-count">{claimStatus.remainingClaims}</span>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -232,6 +242,11 @@ const App: React.FC = () => {
         ) : questions.length > 0 && !quizResult ? (
           <>
             <h2>Blockchain Quiz</h2>
+            
+            <ProgressBar 
+              current={selectedOptions.filter(option => option !== null).length} 
+              total={questions.length} 
+            />
             
             <div className="quiz-section-title">Multiple Choice Questions</div>
             <div className="all-questions">
@@ -277,24 +292,24 @@ const App: React.FC = () => {
               </div>
             )}
             
-            <button
+            <LoadingButton
               onClick={submitAnswers}
-              disabled={!allQuestionsAnswered() || isLoading}
+              disabled={!allQuestionsAnswered()}
+              isLoading={isLoading}
               className="submit-button"
             >
-              {isLoading ? 'Submitting...' : 'Submit Quiz'}
-            </button>
+              Submit Quiz
+            </LoadingButton>
           </>
         ) : isLoading ? (
-          <div className="loading-quiz">
-            <p>Loading quiz questions...</p>
-          </div>
+          <FullPageSpinner />
         ) : null}
 
         {quizResult && (
           <div className="quiz-result">
             <h3>Your Results</h3>
-            <p>Overall Score: {quizResult.score}%</p>
+            
+            <ScoreCircle score={quizResult.score} />
             
             {quizResult.multipleChoice && (
               <>
@@ -307,13 +322,40 @@ const App: React.FC = () => {
                     <div key={index} className="question-result">
                       <h4>Question {index + 1}</h4>
                       <p>{question.question}</p>
-                      <p>Your answer: {selectedOptions[index] !== null ? 
-                          question.options[selectedOptions[index]] : 'No answer'}</p>
-                      <p>Correct answer: {question.correctAnswer}</p>
-                      <p className="explanation">{question.explanation}</p>
+                      
+                      {/* Replace the answer status section with this new code */}
+                      <div className="result-options-container">
+                        {question.options.map((option, optionIndex) => {
+                          const isUserSelection = selectedOptions[index] === optionIndex;
+                          const isCorrectAnswer = option === question.correctAnswer;
+                          const isIncorrectSelection = isUserSelection && !isCorrectAnswer;
+                          
+                          return (
+                            <div
+                              key={optionIndex}
+                              className={`result-option ${isCorrectAnswer ? 'correct-answer' : ''} ${isIncorrectSelection ? 'incorrect-answer' : ''}`}
+                            >
+                              {option}
+                              
+                              {isUserSelection && !isCorrectAnswer && (
+                                <span className="result-option-label your-answer">Your answer</span>
+                              )}
+                              
+                              {isCorrectAnswer && (
+                                <span className="result-option-label correct">
+                                  {isUserSelection ? 'Correct' : 'Correct answer'}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      <div className="explanation">{question.explanation}</div>
                     </div>
                   ))}
                 </div>
+
               </>
             )}
             
@@ -340,14 +382,14 @@ const App: React.FC = () => {
             {quizResult.score >= 50 ? (
               <>
                 {!transactionHash ? (
-                  <button
+                  <LoadingButton
                     onClick={claimReward}
-                    disabled={claimProcessing || !claimStatus?.canClaim}
+                    disabled={!claimStatus?.canClaim}
+                    isLoading={claimProcessing}
                     className="claim-button"
                   >
-                    {claimProcessing ? 'Processing...' : 
-                      claimStatus?.canClaim ? 'Claim Reward' : 'Daily Claim Limit Reached'}
-                  </button>
+                    {claimStatus?.canClaim ? 'Claim Reward' : 'Daily Claim Limit Reached'}
+                  </LoadingButton>
                 ) : (
                   <div className="claim-success">
                     <p>Reward claimed successfully!</p>
@@ -362,24 +404,26 @@ const App: React.FC = () => {
                     </p>
                   </div>
                 )}
-                <button 
+                <LoadingButton 
                   onClick={loadQuizQuestions} 
                   className="next-question-button"
                   disabled={isLoading}
+                  isLoading={false}
                 >
                   Take Another Quiz
-                </button>
+                </LoadingButton>
               </>
             ) : (
               <div className="low-score-message">
                 <p>You need a score of at least 50% to claim a reward.</p>
-                <button 
+                <LoadingButton 
                   onClick={loadQuizQuestions} 
                   className="next-question-button"
                   disabled={isLoading}
+                  isLoading={false}
                 >
                   Try Again
-                </button>
+                </LoadingButton>
               </div>
             )}
           </div>
