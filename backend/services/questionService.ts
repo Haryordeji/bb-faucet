@@ -10,6 +10,12 @@ interface QuizQuestion {
   explanation: string;
 }
 
+interface FreeResponseQuestion {
+  question: string;
+  sampleAnswer: string;
+  rubric: string; // Grading criteria
+}
+
 interface SlideContent {
   filename: string;
   content: string;
@@ -102,12 +108,17 @@ export class QuestionService {
    * Generate quiz questions based on a random covered slide
    */
   public async generateQuizQuestions(
-    numQuestions: number = 1
-  ): Promise<{ questions: QuizQuestion[]; slideTopic: string }> {
+    numQuestions: number = 5
+  ): Promise<{ 
+    questions: QuizQuestion[]; 
+    freeResponseQuestion: FreeResponseQuestion; 
+    slideTopic: string 
+  }> {
     try {
       const slide = this.getRandomSlide();
       const topic = this.extractTopicFromFilename(slide.filename);
       
+      // Generate multiple choice questions
       const prompt = this.createPrompt(
         slide.content,
         numQuestions,
@@ -130,15 +141,89 @@ export class QuestionService {
         response_format: { type: "json_object" }
       });
 
-      const content:string = completion.choices[0].message.content || '';
+      const content = completion.choices[0].message.content || '';
       const questions = this.parseQuestions(content);
+      
+      // Generate free response question
+      const freeResponseQuestion = await this.generateFreeResponseQuestion(slide.content);
       
       return {
         questions,
+        freeResponseQuestion,
         slideTopic: topic
       };
     } catch (error) {
       console.error('Error generating quiz questions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a free response question based on slide content
+   */
+  public async generateFreeResponseQuestion(
+    slideContent: string
+  ): Promise<FreeResponseQuestion> {
+    try {
+      const prompt = this.createFreeResponsePrompt(slideContent);
+
+      const completion = await this.openai.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant that creates educational free response questions about blockchain technology. Always return valid JSON format."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+        response_format: { type: "json_object" }
+      });
+
+      const content = completion.choices[0].message.content || '';
+      return this.parseFreeResponseQuestion(content);
+    } catch (error) {
+      console.error('Error generating free response question:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Grade a free response answer
+   */
+  public async gradeFreeResponseAnswer(
+    question: string,
+    rubric: string,
+    userAnswer: string
+  ): Promise<{ score: number; feedback: string }> {
+    try {
+      const prompt = this.createGradingPrompt(question, rubric, userAnswer);
+
+      const completion = await this.openai.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          {
+            role: "system",
+            content: "You are a fair and consistent grader for blockchain education questions. Always return valid JSON format."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.3, // Lower temperature for more consistent grading
+        max_tokens: 1000,
+        response_format: { type: "json_object" }
+      });
+
+      const content = completion.choices[0].message.content || '';
+      return this.parseGradingResult(content);
+    } catch (error) {
+      console.error('Error grading free response answer:', error);
       throw error;
     }
   }
@@ -187,6 +272,51 @@ export class QuestionService {
             }`;
   }
 
+  private createFreeResponsePrompt(slideContent: string): string {
+    return `Based on the following course material, generate a thoughtful free response question that tests understanding of key concepts:
+            
+            ${slideContent}
+            
+            Format the response as a JSON object with:
+            - "question": string (The free response question)
+            - "sampleAnswer": string (An example of what a good answer would include)
+            - "rubric": string (Criteria for grading answers, including key points that should be mentioned)
+            
+            Example:
+            {
+              "question": "Explain how proof of work and proof of stake differ in their approach to consensus, and discuss the environmental implications of each.",
+              "sampleAnswer": "Proof of Work (PoW) and Proof of Stake (PoS) are consensus mechanisms used in blockchain systems...",
+              "rubric": "A good answer should: 1) Correctly explain the basic mechanism of PoW (computational puzzles, mining) 2) Correctly explain the basic mechanism of PoS (validator selection based on stake) 3) Compare the energy consumption of both approaches 4) Discuss at least one environmental advantage of PoS over PoW"
+            }`;
+  }
+
+  private createGradingPrompt(
+    question: string,
+    rubric: string,
+    userAnswer: string
+  ): string {
+    return `Please grade the following free response answer based on the provided rubric.
+    
+    Question: ${question}
+    
+    Rubric: ${rubric}
+    
+    Student Answer: ${userAnswer}
+    
+    Grade the answer on a scale of 0-100 based on how well it meets the criteria in the rubric.
+    Provide specific feedback explaining the score and suggesting improvements.
+    
+    Format your response as a JSON object with:
+    - "score": number (between 0 and 100)
+    - "feedback": string (specific feedback on the answer)
+    
+    Example:
+    {
+      "score": 85,
+      "feedback": "Your answer correctly explains the basic mechanisms of both PoW and PoS, and effectively compares their energy usage. To improve, you could have elaborated more on the specific environmental advantages of PoS beyond just energy efficiency."
+    }`;
+  }
+
   private parseQuestions(content: string): QuizQuestion[] {
     try {
       const parsed = JSON.parse(content);
@@ -218,6 +348,52 @@ export class QuestionService {
     } catch (error) {
       console.error('Error parsing questions:', error);
       throw new Error('Failed to parse questions from AI response');
+    }
+  }
+
+  private parseFreeResponseQuestion(content: string): FreeResponseQuestion {
+    try {
+      const parsed = JSON.parse(content);
+      
+      if (!parsed.question || typeof parsed.question !== 'string') {
+        throw new Error('Invalid free response question: missing or invalid question text');
+      }
+      if (!parsed.sampleAnswer || typeof parsed.sampleAnswer !== 'string') {
+        throw new Error('Invalid free response question: missing or invalid sample answer');
+      }
+      if (!parsed.rubric || typeof parsed.rubric !== 'string') {
+        throw new Error('Invalid free response question: missing or invalid rubric');
+      }
+      
+      return {
+        question: parsed.question,
+        sampleAnswer: parsed.sampleAnswer,
+        rubric: parsed.rubric
+      };
+    } catch (error) {
+      console.error('Error parsing free response question:', error);
+      throw new Error('Failed to parse free response question from AI response');
+    }
+  }
+
+  private parseGradingResult(content: string): { score: number; feedback: string } {
+    try {
+      const parsed = JSON.parse(content);
+      
+      if (typeof parsed.score !== 'number' || parsed.score < 0 || parsed.score > 100) {
+        throw new Error('Invalid grading result: score must be a number between 0 and 100');
+      }
+      if (!parsed.feedback || typeof parsed.feedback !== 'string') {
+        throw new Error('Invalid grading result: missing or invalid feedback');
+      }
+      
+      return {
+        score: parsed.score,
+        feedback: parsed.feedback
+      };
+    } catch (error) {
+      console.error('Error parsing grading result:', error);
+      throw new Error('Failed to parse grading result from AI response');
     }
   }
 }

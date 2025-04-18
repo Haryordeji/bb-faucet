@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import './App.css';
-import { QuizQuestion, QuizResult, ClaimResponse, ClaimStatus } from './types';
+import { QuizQuestion, FreeResponseQuestion, QuizResult, ClaimResponse, ClaimStatus } from './types';
 import { fetchQuizQuestions, submitQuizAnswers, getClaimStatus, initiateClaim } from './utils/api';
 
 const App: React.FC = () => {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [freeResponseQuestion, setFreeResponseQuestion] = useState<FreeResponseQuestion | null>(null);
+  const [freeResponseAnswer, setFreeResponseAnswer] = useState('');
   const [selectedOptions, setSelectedOptions] = useState<(number | null)[]>([]);
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -74,8 +76,11 @@ const App: React.FC = () => {
       const data = await fetchQuizQuestions(5);
       
       setQuestions(data.questions);
+      setFreeResponseQuestion(data.freeResponseQuestion);
       setSelectedOptions(new Array(data.questions.length).fill(null));
+      setFreeResponseAnswer('');
       setQuizResult(null);
+      setTransactionHash(null);
     } catch (err) {
       setError('Failed to load quiz questions. Please try again.');
       console.error(err);
@@ -93,12 +98,15 @@ const App: React.FC = () => {
 
   // Check if all questions have a selected answer
   const allQuestionsAnswered = () => {
-    return selectedOptions.every(option => option !== null);
+    return (
+      selectedOptions.every(option => option !== null) && 
+      freeResponseAnswer.trim().length > 0
+    );
   };
 
   // Submit all answers
   const submitAnswers = async () => {
-    if (!allQuestionsAnswered() || !questions.length) return;
+    if (!allQuestionsAnswered() || !questions.length || !freeResponseQuestion) return;
 
     try {
       setIsLoading(true);
@@ -111,17 +119,17 @@ const App: React.FC = () => {
       });
       const correctAnswers = questions.map(q => q.correctAnswer);
       
-      // Submit all answers together
+      // Submit all answers together including free response
       const result = await submitQuizAnswers(
         questionIds,
         userAnswers,
-        correctAnswers
+        correctAnswers,
+        freeResponseAnswer,
+        freeResponseQuestion.question,
+        freeResponseQuestion.rubric
       );
 
-      setQuizResult({
-        score: result.score,
-        isCorrect: result.isCorrect,
-      });
+      setQuizResult(result);
       
       // Refresh claim status after submitting
       if (walletAddress) {
@@ -222,36 +230,61 @@ const App: React.FC = () => {
             <p>Please connect your MetaMask wallet to participate in quizzes and earn rewards.</p>
           </div>
         ) : questions.length > 0 && !quizResult ? (
-          <div className="all-questions">
+          <>
             <h2>Blockchain Quiz</h2>
             
-            {questions.map((question, questionIndex) => (
-              <div key={questionIndex} className="quiz-question">
-                <h3>Question {questionIndex + 1}</h3>
-                <p>{question.question}</p>
+            <div className="quiz-section-title">Multiple Choice Questions</div>
+            <div className="all-questions">
+              {questions.map((question, questionIndex) => (
+                <div key={questionIndex} className="quiz-question">
+                  <h3>Question {questionIndex + 1}</h3>
+                  <p>{question.question}</p>
+                  
+                  <div className="options-container">
+                    {question.options.map((option, optionIndex) => (
+                      <div
+                        key={optionIndex}
+                        className={`option ${selectedOptions[questionIndex] === optionIndex ? 'selected' : ''}`}
+                        onClick={() => handleOptionSelect(questionIndex, optionIndex)}
+                      >
+                        {option}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <hr className="section-divider" />
+            
+            {freeResponseQuestion && (
+              <div className="free-response-section">
+                <h3>Free Response Question</h3>
+                <p className="free-response-question">{freeResponseQuestion.question}</p>
                 
-                <div className="options-container">
-                  {question.options.map((option, optionIndex) => (
-                    <div
-                      key={optionIndex}
-                      className={`option ${selectedOptions[questionIndex] === optionIndex ? 'selected' : ''}`}
-                      onClick={() => handleOptionSelect(questionIndex, optionIndex)}
-                    >
-                      {option}
-                    </div>
-                  ))}
+                <textarea
+                  className="free-response-input"
+                  value={freeResponseAnswer}
+                  onChange={(e) => setFreeResponseAnswer(e.target.value)}
+                  placeholder="Type your answer here..."
+                  rows={8}
+                />
+                
+                <div className="answer-count">
+                  <span>{freeResponseAnswer.trim().length > 0 ? 'Your answer' : 'Please provide an answer'}</span>
+                  <span>{freeResponseAnswer.length} characters</span>
                 </div>
               </div>
-            ))}
+            )}
             
             <button
               onClick={submitAnswers}
               disabled={!allQuestionsAnswered() || isLoading}
               className="submit-button"
             >
-              {isLoading ? 'Submitting...' : 'Submit All Answers'}
+              {isLoading ? 'Submitting...' : 'Submit Quiz'}
             </button>
-          </div>
+          </>
         ) : isLoading ? (
           <div className="loading-quiz">
             <p>Loading quiz questions...</p>
@@ -263,19 +296,46 @@ const App: React.FC = () => {
             <h3>Your Results</h3>
             <p>Overall Score: {quizResult.score}%</p>
             
-            {/* Display individual question results */}
-            <div className="question-results">
-              {questions.map((question, index) => (
-                <div key={index} className="question-result">
-                  <h4>Question {index + 1}</h4>
-                  <p>{question.question}</p>
-                  <p>Your answer: {selectedOptions[index] !== null ? 
-                      question.options[selectedOptions[index]] : 'No answer'}</p>
-                  <p>Correct answer: {question.correctAnswer}</p>
-                  <p className="explanation">{question.explanation}</p>
+            {quizResult.multipleChoice && (
+              <>
+                <div className="quiz-section-title">Multiple Choice Results</div>
+                <p>Score: {quizResult.multipleChoice.score}% ({quizResult.multipleChoice.totalCorrect}/{quizResult.multipleChoice.totalQuestions} correct)</p>
+                
+                {/* Display individual question results */}
+                <div className="question-results">
+                  {questions.map((question, index) => (
+                    <div key={index} className="question-result">
+                      <h4>Question {index + 1}</h4>
+                      <p>{question.question}</p>
+                      <p>Your answer: {selectedOptions[index] !== null ? 
+                          question.options[selectedOptions[index]] : 'No answer'}</p>
+                      <p>Correct answer: {question.correctAnswer}</p>
+                      <p className="explanation">{question.explanation}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
+            
+            {quizResult.freeResponse && (
+              <>
+                <div className="quiz-section-title">Free Response Results</div>
+                <div className="free-response-result">
+                  <h4>Question</h4>
+                  <p>{freeResponseQuestion?.question}</p>
+                  
+                  <h4>Your Answer</h4>
+                  <p>{freeResponseAnswer}</p>
+                  
+                  <p className="free-response-score">Score: {quizResult.freeResponse.score}%</p>
+                  
+                  <div className="feedback-container">
+                    <div className="feedback-title">Feedback:</div>
+                    <p className="feedback">{quizResult.freeResponse.feedback}</p>
+                  </div>
+                </div>
+              </>
+            )}
             
             {quizResult.score >= 50 ? (
               <>
