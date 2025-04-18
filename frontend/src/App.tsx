@@ -5,6 +5,7 @@ import { QuizQuestion, FreeResponseQuestion, QuizResult, ClaimResponse, ClaimSta
 import { fetchQuizQuestions, submitQuizAnswers, getClaimStatus, initiateClaim } from './utils/api';
 import { LoadingButton, FullPageSpinner, ProgressBar, ScoreCircle } from './components/Loading';
 import { ErrorMessage, FeedbackOverlay } from './components/Feedback';
+import EthereumLoader from './components/EthereumLoader';
 
 const App: React.FC = () => {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -301,7 +302,7 @@ const App: React.FC = () => {
             </LoadingButton>
           </>
         ) : isLoading ? (
-          <FullPageSpinner />
+          <EthereumLoader />
         ) : null}
 
         {quizResult && (
