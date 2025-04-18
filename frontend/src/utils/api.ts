@@ -1,4 +1,5 @@
 // API utility for making requests to the backend
+/// <reference types="vite/types/importMeta.d.ts" />
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -17,7 +18,14 @@ export const fetchQuizQuestions = async (numQuestions = 5) => {
   }
 };
 
-export const submitQuizAnswers = async (questionIds: string[], answers: string[], correctAnswers: string[]) => {
+export const submitQuizAnswers = async (
+  questionIds: string[], 
+  answers: string[], 
+  correctAnswers: string[],
+  freeResponseAnswer: string,
+  freeResponseQuestion: string,
+  freeResponseRubric: string
+) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/quiz/submit`, {
       method: 'POST',
@@ -28,6 +36,9 @@ export const submitQuizAnswers = async (questionIds: string[], answers: string[]
         questionIds,
         answers,
         correctAnswers,
+        freeResponseAnswer,
+        freeResponseQuestion,
+        freeResponseRubric
       }),
     });
     

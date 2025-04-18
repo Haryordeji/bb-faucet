@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import './App.css';
-import { QuizQuestion, QuizResult, ClaimResponse, ClaimStatus } from './types';
+import { QuizQuestion, FreeResponseQuestion, QuizResult, ClaimResponse, ClaimStatus } from './types';
 import { fetchQuizQuestions, submitQuizAnswers, getClaimStatus, initiateClaim } from './utils/api';
+import { LoadingButton, FullPageSpinner, ProgressBar, ScoreCircle } from './components/Loading';
+import { ErrorMessage, FeedbackOverlay } from './components/Feedback';
+import EthereumLoader from './components/EthereumLoader';
 
 const App: React.FC = () => {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [freeResponseQuestion, setFreeResponseQuestion] = useState<FreeResponseQuestion | null>(null);
+  const [freeResponseAnswer, setFreeResponseAnswer] = useState('');
   const [selectedOptions, setSelectedOptions] = useState<(number | null)[]>([]);
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -15,6 +20,7 @@ const App: React.FC = () => {
   const [claimStatus, setClaimStatus] = useState<ClaimStatus | null>(null);
   const [claimProcessing, setClaimProcessing] = useState(false);
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   // Check if MetaMask is installed
   const isMetaMaskInstalled = () => {
@@ -71,11 +77,15 @@ const App: React.FC = () => {
   const loadQuizQuestions = async () => {
     try {
       setIsLoading(true);
+      setError(null);
       const data = await fetchQuizQuestions(5);
       
       setQuestions(data.questions);
+      setFreeResponseQuestion(data.freeResponseQuestion);
       setSelectedOptions(new Array(data.questions.length).fill(null));
+      setFreeResponseAnswer('');
       setQuizResult(null);
+      setTransactionHash(null);
     } catch (err) {
       setError('Failed to load quiz questions. Please try again.');
       console.error(err);
@@ -93,12 +103,15 @@ const App: React.FC = () => {
 
   // Check if all questions have a selected answer
   const allQuestionsAnswered = () => {
-    return selectedOptions.every(option => option !== null);
+    return (
+      selectedOptions.every(option => option !== null) && 
+      freeResponseAnswer.trim().length > 0
+    );
   };
 
   // Submit all answers
   const submitAnswers = async () => {
-    if (!allQuestionsAnswered() || !questions.length) return;
+    if (!allQuestionsAnswered() || !questions.length || !freeResponseQuestion) return;
 
     try {
       setIsLoading(true);
@@ -111,17 +124,17 @@ const App: React.FC = () => {
       });
       const correctAnswers = questions.map(q => q.correctAnswer);
       
-      // Submit all answers together
+      // Submit all answers together including free response
       const result = await submitQuizAnswers(
         questionIds,
         userAnswers,
-        correctAnswers
+        correctAnswers,
+        freeResponseAnswer,
+        freeResponseQuestion.question,
+        freeResponseQuestion.rubric
       );
 
-      setQuizResult({
-        score: result.score,
-        isCorrect: result.isCorrect,
-      });
+      setQuizResult(result);
       
       // Refresh claim status after submitting
       if (walletAddress) {
@@ -141,13 +154,13 @@ const App: React.FC = () => {
     
     try {
       setClaimProcessing(true);
+      setFeedbackVisible(true); 
       
       const result = await initiateClaim(walletAddress, quizResult.score);
       
       if (result.success && result.transactionHash) {
         setTransactionHash(result.transactionHash);
         
-        // Refresh claim status after claiming
         if (walletAddress) {
           await fetchClaimStatusForUser(walletAddress);
         }
@@ -159,6 +172,7 @@ const App: React.FC = () => {
       console.error(err);
     } finally {
       setClaimProcessing(false);
+      setFeedbackVisible(false);
     }
   };
 
@@ -191,29 +205,33 @@ const App: React.FC = () => {
         <p>Learn blockchain and earn testnet ETH</p>
         
         {!walletAddress ? (
-          <button 
+          <LoadingButton 
             onClick={connectWallet} 
-            disabled={isLoading}
+            disabled={false}
+            isLoading={isLoading}
             className="connect-button"
           >
-            {isLoading ? 'Connecting...' : 'Connect MetaMask'}
-          </button>
+            Connect MetaMask
+          </LoadingButton>
         ) : (
           <div className="wallet-info">
-            <p>Connected: {`${walletAddress.substring(0, 6)}...${walletAddress.substring(38)}`}</p>
+            <div className="wallet-address">
+              <span className="wallet-icon">💳</span>
+              <p>Connected: {`${walletAddress.substring(0, 6)}...${walletAddress.substring(38)}`}</p>
+            </div>
             {claimStatus && (
-              <p>Remaining claims today: {claimStatus.remainingClaims}</p>
+              <div className="wallet-status">
+                <span className="status-indicator"></span>
+                <div className="claim-info">
+                  Remaining claims: <span className="claim-count">{claimStatus.remainingClaims}</span>
+                </div>
+              </div>
             )}
           </div>
         )}
       </header>
 
-      {error && (
-        <div className="error-message">
-          <p>{error}</p>
-          <button onClick={() => setError(null)}>Dismiss</button>
-        </div>
-      )}
+      <ErrorMessage error={error} onDismiss={() => setError(null)} />
 
       <main className="quiz-container">
         {!walletAddress ? (
@@ -222,72 +240,156 @@ const App: React.FC = () => {
             <p>Please connect your MetaMask wallet to participate in quizzes and earn rewards.</p>
           </div>
         ) : questions.length > 0 && !quizResult ? (
-          <div className="all-questions">
+          <>
             <h2>Blockchain Quiz</h2>
             
-            {questions.map((question, questionIndex) => (
-              <div key={questionIndex} className="quiz-question">
-                <h3>Question {questionIndex + 1}</h3>
-                <p>{question.question}</p>
+            <ProgressBar 
+              current={selectedOptions.filter(option => option !== null).length} 
+              total={questions.length} 
+            />
+            
+            <div className="quiz-section-title">Multiple Choice Questions</div>
+            <div className="all-questions">
+              {questions.map((question, questionIndex) => (
+                <div key={questionIndex} className="quiz-question">
+                  <h3>Question {questionIndex + 1}</h3>
+                  <p>{question.question}</p>
+                  
+                  <div className="options-container">
+                    {question.options.map((option, optionIndex) => (
+                      <div
+                        key={optionIndex}
+                        className={`option ${selectedOptions[questionIndex] === optionIndex ? 'selected' : ''}`}
+                        onClick={() => handleOptionSelect(questionIndex, optionIndex)}
+                      >
+                        {option}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <hr className="section-divider" />
+            
+            {freeResponseQuestion && (
+              <div className="free-response-section">
+                <h3>Free Response Question</h3>
+                <p className="free-response-question">{freeResponseQuestion.question}</p>
                 
-                <div className="options-container">
-                  {question.options.map((option, optionIndex) => (
-                    <div
-                      key={optionIndex}
-                      className={`option ${selectedOptions[questionIndex] === optionIndex ? 'selected' : ''}`}
-                      onClick={() => handleOptionSelect(questionIndex, optionIndex)}
-                    >
-                      {option}
-                    </div>
-                  ))}
+                <textarea
+                  className="free-response-input"
+                  value={freeResponseAnswer}
+                  onChange={(e) => setFreeResponseAnswer(e.target.value)}
+                  placeholder="Type your answer here..."
+                  rows={8}
+                />
+                
+                <div className="answer-count">
+                  <span>{freeResponseAnswer.trim().length > 0 ? 'Your answer' : 'Please provide an answer'}</span>
+                  <span>{freeResponseAnswer.length} characters</span>
                 </div>
               </div>
-            ))}
+            )}
             
-            <button
+            <LoadingButton
               onClick={submitAnswers}
-              disabled={!allQuestionsAnswered() || isLoading}
+              disabled={!allQuestionsAnswered()}
+              isLoading={isLoading}
               className="submit-button"
             >
-              {isLoading ? 'Submitting...' : 'Submit All Answers'}
-            </button>
-          </div>
+              Submit Quiz
+            </LoadingButton>
+          </>
         ) : isLoading ? (
-          <div className="loading-quiz">
-            <p>Loading quiz questions...</p>
-          </div>
+          <EthereumLoader />
         ) : null}
 
         {quizResult && (
           <div className="quiz-result">
             <h3>Your Results</h3>
-            <p>Overall Score: {quizResult.score}%</p>
             
-            {/* Display individual question results */}
-            <div className="question-results">
-              {questions.map((question, index) => (
-                <div key={index} className="question-result">
-                  <h4>Question {index + 1}</h4>
-                  <p>{question.question}</p>
-                  <p>Your answer: {selectedOptions[index] !== null ? 
-                      question.options[selectedOptions[index]] : 'No answer'}</p>
-                  <p>Correct answer: {question.correctAnswer}</p>
-                  <p className="explanation">{question.explanation}</p>
+            <ScoreCircle score={quizResult.score} />
+            
+            {quizResult.multipleChoice && (
+              <>
+                <div className="quiz-section-title">Multiple Choice Results</div>
+                <p>Score: {quizResult.multipleChoice.score}% ({quizResult.multipleChoice.totalCorrect}/{quizResult.multipleChoice.totalQuestions} correct)</p>
+                
+                {/* Display individual question results */}
+                <div className="question-results">
+                  {questions.map((question, index) => (
+                    <div key={index} className="question-result">
+                      <h4>Question {index + 1}</h4>
+                      <p>{question.question}</p>
+                      
+                      {/* Replace the answer status section with this new code */}
+                      <div className="result-options-container">
+                        {question.options.map((option, optionIndex) => {
+                          const isUserSelection = selectedOptions[index] === optionIndex;
+                          const isCorrectAnswer = option === question.correctAnswer;
+                          const isIncorrectSelection = isUserSelection && !isCorrectAnswer;
+                          
+                          return (
+                            <div
+                              key={optionIndex}
+                              className={`result-option ${isCorrectAnswer ? 'correct-answer' : ''} ${isIncorrectSelection ? 'incorrect-answer' : ''}`}
+                            >
+                              {option}
+                              
+                              {isUserSelection && !isCorrectAnswer && (
+                                <span className="result-option-label your-answer">Your answer</span>
+                              )}
+                              
+                              {isCorrectAnswer && (
+                                <span className="result-option-label correct">
+                                  {isUserSelection ? 'Correct' : 'Correct answer'}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      <div className="explanation">{question.explanation}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+
+              </>
+            )}
+            
+            {quizResult.freeResponse && (
+              <>
+                <div className="quiz-section-title">Free Response Results</div>
+                <div className="free-response-result">
+                  <h4>Question</h4>
+                  <p>{freeResponseQuestion?.question}</p>
+                  
+                  <h4>Your Answer</h4>
+                  <p>{freeResponseAnswer}</p>
+                  
+                  <p className="free-response-score">Score: {quizResult.freeResponse.score}%</p>
+                  
+                  <div className="feedback-container">
+                    <div className="feedback-title">Feedback:</div>
+                    <p className="feedback">{quizResult.freeResponse.feedback}</p>
+                  </div>
+                </div>
+              </>
+            )}
             
             {quizResult.score >= 50 ? (
               <>
                 {!transactionHash ? (
-                  <button
+                  <LoadingButton
                     onClick={claimReward}
-                    disabled={claimProcessing || !claimStatus?.canClaim}
+                    disabled={!claimStatus?.canClaim}
+                    isLoading={claimProcessing}
                     className="claim-button"
                   >
-                    {claimProcessing ? 'Processing...' : 
-                      claimStatus?.canClaim ? 'Claim Reward' : 'Daily Claim Limit Reached'}
-                  </button>
+                    {claimStatus?.canClaim ? 'Claim Reward' : 'Daily Claim Limit Reached'}
+                  </LoadingButton>
                 ) : (
                   <div className="claim-success">
                     <p>Reward claimed successfully!</p>
@@ -302,28 +404,35 @@ const App: React.FC = () => {
                     </p>
                   </div>
                 )}
-                <button 
+                <LoadingButton 
                   onClick={loadQuizQuestions} 
                   className="next-question-button"
                   disabled={isLoading}
+                  isLoading={false}
                 >
                   Take Another Quiz
-                </button>
+                </LoadingButton>
               </>
             ) : (
               <div className="low-score-message">
                 <p>You need a score of at least 50% to claim a reward.</p>
-                <button 
+                <LoadingButton 
                   onClick={loadQuizQuestions} 
                   className="next-question-button"
                   disabled={isLoading}
+                  isLoading={false}
                 >
                   Try Again
-                </button>
+                </LoadingButton>
               </div>
             )}
           </div>
         )}
+
+          <FeedbackOverlay 
+            message="Processing your claim..." 
+            visible={feedbackVisible} 
+          />
       </main>
     </div>
   );

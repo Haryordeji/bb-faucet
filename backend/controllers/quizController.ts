@@ -19,12 +19,13 @@ export const quizController = {
         questionService.setCurrentWeek(parseInt(req.query.week as string));
       }
 
-      const { questions, slideTopic } = await questionService.generateQuizQuestions(
-        parseInt(req.query.numQuestions as string) || 1
+      const { questions, freeResponseQuestion, slideTopic } = await questionService.generateQuizQuestions(
+        parseInt(req.query.numQuestions as string) || 5
       );
 
       res.json({ 
         questions,
+        freeResponseQuestion,
         metadata: {
           slideTopic,
           currentWeek: questionService.getCurrentWeek()
@@ -38,7 +39,14 @@ export const quizController = {
 
   submitAnswers: async (req: Request, res: Response) => {
     try {
-      const { answers, questionIds, correctAnswers } = req.body;
+      const { 
+        answers, 
+        questionIds, 
+        correctAnswers, 
+        freeResponseAnswer,
+        freeResponseQuestion,
+        freeResponseRubric
+      } = req.body;
       
       if (!answers || !questionIds || !Array.isArray(answers) || !Array.isArray(questionIds)) {
         res.status(400).json({ error: 'Invalid request format' });
@@ -50,8 +58,13 @@ export const quizController = {
         return;
       }
       
-      // Validate answers and calculate score
-      const results: any = [];
+      if (!freeResponseAnswer || !freeResponseQuestion || !freeResponseRubric) {
+        res.status(400).json({ error: 'Missing free response data' });
+        return;
+      }
+      
+      // Validate multiple choice answers and calculate score
+      const mcResults: any = [];
       let totalCorrect = 0;
       
       for (let i = 0; i < questionIds.length; i++) {
@@ -62,7 +75,7 @@ export const quizController = {
         const isCorrect = userAnswer === correctAnswer;
         if (isCorrect) totalCorrect++;
         
-        results.push({
+        mcResults.push({
           questionId,
           userAnswer,
           correctAnswer,
@@ -70,17 +83,34 @@ export const quizController = {
         });
       }
       
-      // Calculate score as a percentage
-      const scorePercentage = Math.round((totalCorrect / questionIds.length) * 100);
-      const isCorrect = scorePercentage >= 50; // Consider "correct" if score is at least 50%
+      // Calculate multiple choice score as a percentage
+      const mcScorePercentage = Math.round((totalCorrect / questionIds.length) * 100);
+      
+      // Grade the free response answer
+      const frResult = await questionService.gradeFreeResponseAnswer(
+        freeResponseQuestion,
+        freeResponseRubric,
+        freeResponseAnswer
+      );
+      
+      // Calculate the final score (80% from multiple choice, 20% from free response)
+      const finalScore = Math.round((mcScorePercentage * 0.8) + (frResult.score * 0.2));
+      const isCorrect = finalScore >= 50; // Consider "correct" if score is at least 50%
       
       // Send the results
       res.json({
-        score: scorePercentage,
+        score: finalScore,
         isCorrect,
-        results,
-        totalCorrect,
-        totalQuestions: questionIds.length
+        multipleChoice: {
+          results: mcResults,
+          totalCorrect,
+          totalQuestions: questionIds.length,
+          score: mcScorePercentage
+        },
+        freeResponse: {
+          score: frResult.score,
+          feedback: frResult.feedback
+        }
       });
     } catch (error) {
       console.error('Error grading quiz:', error);
